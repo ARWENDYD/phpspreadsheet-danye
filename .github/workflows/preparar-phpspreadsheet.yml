@@ -1,0 +1,50 @@
+name: Preparar PhpSpreadsheet para FTP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/preparar-phpspreadsheet.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  generar-paquete:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Preparar PHP 8.3 y Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          extensions: ctype, dom, fileinfo, filter, gd, iconv, libxml, mbstring, simplexml, xml, xmlreader, xmlwriter, zip, zlib
+          coverage: none
+
+      - name: Instalar PhpSpreadsheet 5.10.0 con todas sus dependencias
+        shell: bash
+        run: |
+          mkdir paquete
+          cd paquete
+          printf '%s\n' '{"require":{"phpoffice/phpspreadsheet":"5.10.0"},"config":{"platform":{"php":"8.3.0"}}}' > composer.json
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+          composer check-platform-reqs
+
+      - name: Probar generación real de un Excel XLS
+        shell: bash
+        run: |
+          php -r 'require "paquete/vendor/autoload.php"; $s = new \PhpOffice\PhpSpreadsheet\Spreadsheet(); $s->getActiveSheet()->setCellValue("B1", "Prueba DANYE"); (new \PhpOffice\PhpSpreadsheet\Writer\Xls($s))->save("paquete/prueba.xls"); if (!filesize("paquete/prueba.xls")) {exit(1);} echo "XLS generado correctamente.\n";'
+
+      - name: Empaquetar la carpeta vendor para subir por FTP
+        shell: bash
+        run: |
+          cd paquete
+          zip -qr ../phpspreadsheet-5.10.0-php83-ftp.zip vendor composer.json composer.lock
+
+      - name: Publicar ZIP descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpspreadsheet-php83-ftp
+          path: phpspreadsheet-5.10.0-php83-ftp.zip
+          if-no-files-found: error
+          retention-days: 7
